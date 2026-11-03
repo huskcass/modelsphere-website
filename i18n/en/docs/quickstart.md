@@ -17,10 +17,22 @@ On the machine you type from:
 | helm ≥ 3.8 and helmfile ≥ 1.0 | Install them yourself; tested on helm v4.3.0 + helmfile 1.8.0 |
 | The helm-diff plugin | `make helm-deps` — once per machine, and not optional: `helmfile apply` shells out to it |
 
+The cluster itself needs two things, whatever you install (see [What your cluster needs](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#what-your-cluster-needs) in the install guide):
+
+| Requirement | What it has to be |
+|---|---|
+| **Kubernetes ≥ 1.25** | the strictest `kubeVersion` among the charts (kube-prometheus-stack); without monitoring it is 1.21 |
+| **a CNI** | any one, including none yet: a cluster built by Part B has no CNI until step 6 installs Cilium. Bring your own and turn Cilium off |
+
+To deploy models later, you also need (see [Deploying a model](https://github.com/modelsphere/modelsphere/blob/main/docs/deploy-a-model.md#before-you-start)):
+
+- The GPU nodes advertise `nvidia.com/gpu`: through your own device plugin, or with `enabled.gpuOperator: true`.
+- **The weights are on each GPU node's local disk**, one directory per model, e.g. `/mnt/disk0/models/<org>/<model>`. `model.localPath` is a hostPath, so shared storage (NFS, CephFS) is not supported.
+
 ## Install the stack
 
 :::warning
-This step writes to the cluster, and the defaults are for a cluster being built from scratch. `environments/default.yaml` switches on eighteen components, among them a CNI, a GPU operator, a scheduler and a monitoring stack. On a cluster that has its own, turn them off in your environment file first — [On a cluster you already have](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#on-a-cluster-you-already-have) is that block, ready to copy. `make helm-diff ENV=<env>` lists everything an apply would create, and changes nothing.
+This step writes to the cluster, and the defaults are for a cluster being built from scratch. `environments/default.yaml` switches on eighteen components, among them a CNI, a GPU operator, a scheduler and a monitoring stack. On a cluster that has its own, turn them off in your environment file first — [On a cluster you already have](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#on-a-cluster-you-already-have) is that block, ready to copy.
 :::
 
 Optional: run `make helm-bootstrap` first, which installs the Gateway API CRDs and PriorityClasses. Skip it when all three hold: you expose the routing layer some other way, no values of yours name a PriorityClass, and you have not turned `cilium.gatewayAPI` on (off by default; on, Cilium needs these CRDs too). Both objects are cluster-wide — installed once per cluster, not once per person.
@@ -53,6 +65,8 @@ environments:
       - environments/mycluster.yaml
 ```
 
+Once the environment is registered, you can run `make helm-diff ENV=mycluster` first: it lists everything an apply would create, and changes nothing. Then run `make helm-apply ENV=mycluster`.
+
 When it finishes, `helm list -A` should show every enabled release `deployed`, and `kubectl get pods -A` nothing outside `Running`/`Completed`.
 
 ## Open the Console
@@ -71,7 +85,7 @@ That is the chart's own address recipe; `helm status console -n console` prints 
 kubectl -n console port-forward svc/console-console 8080:8080
 ```
 
-Sign in as `admin` with the password `P@88w0rd`. The first login asks you to set a new password — do it; the default is public knowledge. If your cluster renamed the namespace, use `namespaces.console` from your environment file in place of `console` above.
+Sign in as `admin` with the password `P@88w0rd`. The first login asks you to set a new password; the default is public knowledge, so changing it is strongly recommended (see Signing in below). If your cluster renamed the namespace, use `namespaces.console` from your environment file in place of `console` above.
 
 ## The whole flow
 

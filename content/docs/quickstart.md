@@ -20,10 +20,22 @@ ModelSphere Console 是推理平台的统一入口：在这里部署模型、试
 | helm ≥ 3.8，helmfile ≥ 1.0 | 自行安装；在 helm v4.3.0 + helmfile 1.8.0 上验证过 |
 | helm-diff 插件 | `make helm-deps`。每台机器做一次，不能省略：`helmfile apply` 会调用它 |
 
+集群本身需要满足两点，无论安装哪些组件（见安装指南的 [What your cluster needs](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#what-your-cluster-needs)）：
+
+| 要求 | 具体是什么 |
+|---|---|
+| **Kubernetes ≥ 1.25** | 各 chart 中最严格的 `kubeVersion`（kube-prometheus-stack）；不装监控时为 1.21 |
+| **一个 CNI** | 任意一个都可以，也可以暂时没有：Part B 建出的集群在第 6 步安装 Cilium 之前没有 CNI。自带 CNI 时关掉 Cilium |
+
+之后要部署模型，还需要（见 [Deploying a model](https://github.com/modelsphere/modelsphere/blob/main/docs/deploy-a-model.md#before-you-start)）：
+
+- GPU 节点要提供 `nvidia.com/gpu`：通过你自己的 device plugin，或者设置 `enabled.gpuOperator: true`。
+- **模型权重放在每个 GPU 节点的本地磁盘上**，每个模型一个目录，例如 `/mnt/disk0/models/<org>/<model>`。`model.localPath` 是 hostPath，所以不支持共享存储（NFS、CephFS）。
+
 ## 安装服务栈
 
 :::warning
-这一步会写入集群，默认值是给从零搭建的集群用的。`environments/default.yaml` 会打开十八个组件，其中包括 CNI、GPU operator、调度器和监控栈。集群里已经有的，先在环境文件里关掉——[On a cluster you already have](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#on-a-cluster-you-already-have) 就是可以照抄的那一块。`make helm-diff ENV=<env>` 会列出 apply 将要创建的全部内容，什么都不改。
+这一步会写入集群，默认值是给从零搭建的集群用的。`environments/default.yaml` 会打开十八个组件，其中包括 CNI、GPU operator、调度器和监控栈。集群里已经有的，先在环境文件里关掉——[On a cluster you already have](https://github.com/modelsphere/modelsphere/blob/main/docs/install.md#on-a-cluster-you-already-have) 就是可以照抄的那一块。
 :::
 
 可选：先运行 `make helm-bootstrap`，安装 Gateway API CRD 和 PriorityClasses。以下三点同时成立时可以跳过：你用别的方式暴露路由层；自己的 values 没有指定 PriorityClass；没有打开 `cilium.gatewayAPI`（默认关闭；打开后 Cilium 也需要这些 CRD）。这两类对象是集群范围的，每个集群安装一次，不是每个人安装一次。
@@ -56,6 +68,8 @@ environments:
       - environments/mycluster.yaml
 ```
 
+环境登记之后，可以先运行 `make helm-diff ENV=mycluster`：它会列出 apply 将要创建的全部内容，什么都不改；确认无误再运行 `make helm-apply ENV=mycluster`。
+
 安装结束后检查：`helm list -A` 里每个启用的 release 都应该是 `deployed`，`kubectl get pods -A` 里除了 `Running`/`Completed` 不应有其他状态。
 
 ## 打开 Console
@@ -74,7 +88,7 @@ echo "http://$NODE_IP:$NODE_PORT/"
 kubectl -n console port-forward svc/console-console 8080:8080
 ```
 
-用 `admin`、密码 `P@88w0rd` 登录。第一次登录会要求设置新密码，请改掉，默认密码是公开的。如果集群改过命名空间，把上面的 `console` 换成环境文件里的 `namespaces.console`。
+用 `admin`、密码 `P@88w0rd` 登录。第一次登录会要求设置新密码；默认密码是公开的，强烈建议换掉（见下文「登录」）。如果集群改过命名空间，把上面的 `console` 换成环境文件里的 `namespaces.console`。
 
 ## 一次完整的使用流程
 
